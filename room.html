@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>sufcord</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body class="halloween-page room-page">
+ <div class=" -one"></div><div class=" -two"></div>
+ <main class="page">
+ <header class="topbar"><a class="wordmark" href="/menu"><span class="logo-mark"></span> SUFCORD</a><div class="room-actions"><span class="room-code"> ROOM <strong>{{ code }}</strong></span><button id="leave-room" class="secondary" type="button"> Leave room</button></div></header>
+ <div class="room-layout">
+ <aside class="players-panel"><div class="panel-heading"><h2> The ROOM. spooky amirite</h2><span id="player-count" class="count-pill">0</span></div><ul id="players" class="players-list"></ul><p class="muted tiny">Up to 8 players · host has a icon</p></aside>
+ <section class="chat-panel">
+ <div class="chat-heading"><div><h1>Chat</h1><p class="muted small">Playing as <strong>{{ name }}</strong> · <span id="xp-status">Level 0 · 0/20 XP</span></p></div><span class="online-dot"> LIVE CHAT!! no more refresh page to see others chat load :D</span></div>
+ <div id="messages" class="messages" aria-live="polite"><p class="muted small">Connecting to chat…</p></div>
+ <form id="chat-form" class="chat-form"><input id="message" type="text" maxlength="500" placeholder="Type a message... (or /help for commands)" autocomplete="off" required><button id="gif-toggle" class="secondary" type="button">GIF</button><button id="send-button" class="primary" type="submit">send</button></form>
+ <section id="gif-picker" class="gif-picker" hidden><form id="gif-search-form" class="gif-search-form"><input id="gif-search" type="text" placeholder="Search GIPHY" aria-label="Search GIPHY"><button class="secondary" type="submit">Search</button></form><div id="gif-results" class="gif-results"></div></section>
+ <p id="chat-error" class="error" hidden></p>
+ <p class="muted tiny command-note">blehh. Type <code>/help</code> for commands.</p>
+ </section>
+ </div>
+ <a class="back-link" href="/menu">← go back to mrnu</a>
+ </main>
+ <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+ <script>
+ const socket = io(); const code = {{ code | tojson }}; const isStaff = {{ is_staff | tojson }};
+ const messages = document.getElementById("messages"), players = document.getElementById("players"), playerCount = document.getElementById("player-count");
+ const form = document.getElementById("chat-form"), input = document.getElementById("message"), sendButton = document.getElementById("send-button"), errorBox = document.getElementById("chat-error");
+ const xpStatus = document.getElementById("xp-status"), gifPicker = document.getElementById("gif-picker"), gifResults = document.getElementById("gif-results");
+ let muteInterval = null, muteEndsAt = 0, isMuted = false;
+
+ function addTag(parent, tag) {
+ const badge = document.createElement("span"); badge.className = "message-tag";
+ const name = typeof tag === "string" ? tag : (tag.name || "TAG");
+ const color = typeof tag === "object" && tag.color ? tag.color : "#ff9b45";
+ badge.textContent = name; badge.style.setProperty("--tag-color", color); parent.appendChild(badge);
+ }
+ function appendMessageContent(parent, message) {
+ const text = String(message || "").trim();
+ const isDirectImage = value => {
+ try {
+ const url = new URL(value);
+ return (url.protocol === "http:" || url.protocol === "https:") &&
+ /\.(png|jpe?g|gif|webp|avif)$/i.test(url.pathname);
+ } catch (_) { return false; }
+ };
+ // If the whole message is a direct image/GIF URL, show only the media.
+ if (isDirectImage(text)) {
+ const image = document.createElement("img");
+ image.className = "chat-image";
+ image.src = text;
+ image.alt = "Shared image or GIF";
+ image.loading = "lazy";
+ image.referrerPolicy = "no-referrer";
+ image.addEventListener("error", () => image.remove());
+ parent.appendChild(image);
+ return;
+ }
+
+ const urlRegex = /https?:\/\/[^\s<>]+/gi;
+ let last = 0, match;
+ while ((match = urlRegex.exec(text)) !== null) {
+ parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+ let raw = match[0], trailing = "";
+ while (/[),.!?]$/.test(raw)) { trailing = raw.slice(-1) + trailing; raw = raw.slice(0, -1); }
+ if (isDirectImage(raw)) {
+ const image = document.createElement("img");
+ image.className = "chat-image";
+ image.src = raw;
+ image.alt = "Shared image or GIF";
+ image.loading = "lazy";
+ image.referrerPolicy = "no-referrer";
+ image.addEventListener("error", () => image.remove());
+ parent.appendChild(image);
+ if (trailing) parent.appendChild(document.createTextNode(trailing));
+ } else {
+ try {
+ const url = new URL(raw);
+ if (url.protocol === "http:" || url.protocol === "https:") {
+ const link = document.createElement("a");
+ link.href = url.href; link.target = "_blank";
+ link.rel = "noopener noreferrer"; link.className = "chat-link";
+ link.textContent = raw;
+ parent.appendChild(link);
+ parent.appendChild(document.createTextNode(trailing));
+ } else parent.appendChild(document.createTextNode(match[0]));
+ } catch (_) { parent.appendChild(document.createTextNode(match[0])); }
+ }
+ last = match.index + match[0].length;
+ }
+ parent.appendChild(document.createTextNode(text.slice(last)));
+ }
+ function addMessage(name, message, tags = [], id = null) {
+ const line = document.createElement("div"); line.className = name === "SERVER" ? "system-message" : "message-line";
+ if (id) line.dataset.messageId = id;
+ if (name !== "SERVER") for (const tag of tags || []) addTag(line, tag);
+ const who = document.createElement("strong"); who.textContent = name + ":"; line.appendChild(who); line.appendChild(document.createTextNode(" "));
+ appendMessageContent(line, message);
+ if (isStaff && id && name !== "SERVER") { const del = document.createElement("button"); del.type = "button"; del.className = "delete-message"; del.textContent = "Delete"; del.title = "Delete this message for everyone"; del.addEventListener("click", () => socket.emit("delete_message", { code, id })); line.appendChild(del); }
+ messages.appendChild(line); messages.scrollTop = messages.scrollHeight;
+ }
+ function updateXp(data) { if (!data || !xpStatus) return; xpStatus.textContent = `Level ${data.level} · ${data.progress}/${data.needed} XP`; }
+ async function searchGifs(query) {
+ gifResults.replaceChildren(); const loading = document.createElement("p"); loading.className = "muted small"; loading.textContent = "Searching…"; gifResults.appendChild(loading);
+ try { const response = await fetch("/api/giphy?q=" + encodeURIComponent(query || "trending")); const data = await response.json(); gifResults.replaceChildren();
+ if (!response.ok) { const error = document.createElement("p"); error.className = "muted small"; error.textContent = data.error || "GIPHY search failed."; gifResults.appendChild(error); return; }
+ if (!data.gifs.length) { const empty = document.createElement("p"); empty.className = "muted small"; empty.textContent = "No GIFs found."; gifResults.appendChild(empty); return; }
+ for (const gif of data.gifs) { const button = document.createElement("button"); button.type = "button"; button.className = "gif-result"; button.title = gif.title || "Send GIF"; const img = document.createElement("img"); img.src = gif.preview; img.alt = gif.title || "GIF"; img.loading = "lazy"; button.appendChild(img); button.addEventListener("click", () => { input.value = gif.url; gifPicker.hidden = true; input.focus(); }); gifResults.appendChild(button); }
+ } catch (_) { gifResults.replaceChildren(); const error = document.createElement("p"); error.className = "muted small"; error.textContent = "Couldn't reach GIPHY."; gifResults.appendChild(error); }
+ }
+ function setMuted(seconds, reason = "You are currently muted.") {
+ isMuted = seconds > 0; muteEndsAt = Date.now() + Math.max(0, seconds) * 1000; input.disabled = isMuted; sendButton.disabled = isMuted;
+ if (muteInterval) clearInterval(muteInterval);
+ if (!isMuted) { errorBox.hidden = true; errorBox.textContent = ""; return; }
+ const update = () => { const remaining = Math.max(0, Math.ceil((muteEndsAt - Date.now()) / 1000)); if (!remaining) { clearInterval(muteInterval); muteInterval = null; setMuted(0); return; } errorBox.textContent = `${reason} (${remaining}s remaining)`; errorBox.hidden = false; };
+ update(); muteInterval = setInterval(update, 250);
+ }
+ socket.on("connect", () => { messages.replaceChildren(); socket.emit("join", { code }); });
+ socket.on("chat_message", data => addMessage(data.name, data.message, data.tags || [], data.id || null));
+ socket.on("xp_update", updateXp);
+ socket.on("remove_message", data => { const node = messages.querySelector(`[data-message-id="${CSS.escape(data.id)}"]`); if (node) node.remove(); });
+ socket.on("clear_chat", () => messages.replaceChildren());
+ socket.on("player_list", list => {
+ players.replaceChildren();
+ for (const player of list) {
+ const item = document.createElement("li"), dot = document.createElement("span"), details = document.createElement("span"); dot.className = "player-dot"; details.className = "player-details";
+ if (player.is_host) { const host = document.createElement("span"); host.className = "host-mark"; host.textContent = " HOST"; details.appendChild(host); }
+ for (const tag of player.tags || []) addTag(details, tag);
+ const label = document.createElement("span"); label.textContent = player.name; details.appendChild(label); item.append(dot, details); players.appendChild(item);
+ }
+ playerCount.textContent = list.length;
+ });
+ socket.on("mute_status", data => setMuted(Number(data.seconds) || 0, data.reason || "Chat muted"));
+ socket.on("error_message", data => { errorBox.textContent = data.message; errorBox.hidden = false; });
+ socket.on("room_left", () => { socket.disconnect(); window.location.href = "/menu"; });
+ socket.on("disconnect", () => { if (!isMuted) { errorBox.textContent = "Connection dropped. Trying to reconnect…"; errorBox.hidden = false; } });
+ socket.on("connect_error", () => { errorBox.textContent = "Can't connect right now. Check your connection and try again."; errorBox.hidden = false; });
+ form.addEventListener("submit", event => { event.preventDefault(); const message = input.value.trim(); if (!message || !socket.connected || isMuted) return; socket.emit("message", { code, message }); input.value = ""; input.focus(); });
+ document.getElementById("gif-toggle").addEventListener("click", () => { gifPicker.hidden = !gifPicker.hidden; if (!gifPicker.hidden && !gifResults.childElementCount) searchGifs("trending"); });
+ document.getElementById("gif-search-form").addEventListener("submit", event => { event.preventDefault(); searchGifs(document.getElementById("gif-search").value.trim() || "trending"); });
+ document.getElementById("leave-room").addEventListener("click", () => { const button = document.getElementById("leave-room"); button.disabled = true; button.textContent = "Leaving…"; if (socket.connected) socket.emit("leave_room", { code }); else window.location.href = "/menu"; });
+ </script>
+</body>
+</html>

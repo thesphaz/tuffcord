@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>tuffcord</title>
+ <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="halloween-page welcome-page">
+ <main class="center-card">
+ <div class="logo">tuffcord | my digitech assinnment</div>
+ <p class="muted">yap yap yap.</p>
+ <div class="auth-tabs" role="tablist" aria-label="Account options">
+  <button id="login-tab" class="secondary" type="button" role="tab" aria-selected="{{ 'true' if mode != 'register' else 'false' }}">Log in</button>
+  <button id="register-tab" class="secondary" type="button" role="tab" aria-selected="{{ 'true' if mode == 'register' else 'false' }}">Create account</button>
+ </div>
+ <form method="post" class="name-form" id="auth-form">
+  <input type="hidden" name="action" id="auth-action" value="{{ mode or 'login' }}">
+  <label for="name">Username</label>
+  <input id="name" name="name" maxlength="20" pattern="[A-Za-z0-9_]{1,20}" title="Use letters, numbers, or underscores only." placeholder="e.g. TheCoolGuy" autocomplete="username" required autofocus>
+  <label for="password" style="margin-top:16px">Password</label>
+  <input id="password" name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" required>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <button type="submit" class="primary full" id="submit-button">{{ 'Create account' if mode == 'register' else 'Log in to tuffcord' }}</button>
+ </form>
+ <p class="tiny muted welcome-foot" id="auth-help">New here? Create an account NOW!!.</p>
+ </main>
+ <script>
+ const loginTab = document.getElementById("login-tab");
+ const registerTab = document.getElementById("register-tab");
+ const actionInput = document.getElementById("auth-action");
+ const password = document.getElementById("password");
+ const submitButton = document.getElementById("submit-button");
+ const help = document.getElementById("auth-help");
+ function setMode(mode) {
+   const registering = mode === "register";
+   actionInput.value = mode;
+   loginTab.setAttribute("aria-selected", String(!registering));
+   registerTab.setAttribute("aria-selected", String(registering));
+   loginTab.className = registering ? "secondary" : "primary";
+   registerTab.className = registering ? "primary" : "secondary";
+   submitButton.textContent = registering ? "Create account" : "Log in to tuffcord";
+   password.autocomplete = registering ? "new-password" : "current-password";
+   password.minLength = registering ? 8 : 1;
+   help.textContent = registering ? "Use at least 8 characters for your password. Your progress will be saved to this account." : "New here? Create an account to save your username and progress.";
+ }
+ loginTab.addEventListener("click", () => setMode("login"));
+ registerTab.addEventListener("click", () => setMode("register"));
+ setMode(actionInput.value);
+ </script>
+</body>
+</html>

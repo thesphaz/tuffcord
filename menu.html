@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>tuffcord | discord but tuff cause its my digitech assignment</title>
+ <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="halloween-page">
+ <div class=" -one"></div><div class=" -two"></div>
+ <main class="page">
+ <header class="topbar">
+ <a class="wordmark" href="/menu"><span class="logo-mark"></span> digitechCHAT</a>
+ <span class="user-pill"> your user/name is: <strong>{{ name }}</strong></span>
+ </header>
+
+ <section class="intro">
+ <p class="eyebrow"> have fun here</p>
+ <h1>i like bunnies. and snow leopards. 1 in particular.</h1>
+ <p class="muted">Join or host a rroom.</p>
+ <p class="muted small">Level {{ progress.level }} ! {{ progress.progress }}/{{ progress.needed }} XP ({{ progress.xp }} total msgs sent)</p>
+ <form action="/host" method="post"><button class="primary" type="submit"> make a room</button></form>
+ </section>
+
+ <section class="rooms-panel access-panel">
+ <div class="panel-heading"><div><h2> ADMIN</h2><p class="muted small">Enter the ADMIN PASSWORD for ADMIN perms.</p></div>
+ {% if owner_unlocked %}<span class="access-pill">OWNER ACCESS</span>{% elif mod_unlocked %}<span class="access-pill">STAFF ACCESS</span>{% endif %}
+ </div>
+ {% if not owner_unlocked and not mod_unlocked %}
+ <form action="/role-access" method="post" class="access-form">
+ <input type="password" name="access_code" placeholder="Enter secret code" autocomplete="off" required aria-label="Access code">
+ <button class="secondary" type="submit">Unlock tags</button>
+ </form>
+ {% if owner_error %}<p class="error">{{ owner_error }}</p>{% endif %}
+ {% else %}
+ <p class="success-message">Role permissions unlocked heheh. Visible tags can be toggled without removing staff perms!!.</p>
+ <form action="/set-tags" method="post" class="tag-settings">
+ {% for tag in available_tags %}
+ {% if tag != 'OWNER' or owner_unlocked %}
+ <label class="tag-option">
+ <input type="checkbox" name="tags" value="{{ tag }}" {% if tag in tags %}checked{% endif %} {% if tag == 'OWNER' and not owner_unlocked %}disabled{% endif %}>
+ <span class="tag-preview" style="--tag-color: {{ tag_colors[tag] }}">{{ tag }}</span>
+ </label>
+ {% endif %}
+ {% endfor %}
+ <button class="primary" type="submit">Save SPECIAL tags</button>
+ </form>
+ {% if tags_message %}<p class="success-message">{{ tags_message }}</p>{% endif %}
+ {% if owner_error %}<p class="error">{{ owner_error }}</p>{% endif %}
+ {% endif %}
+ {% if custom_tags %}
+ <div class="custom-tag-controls">
+ <h3>Your personal tags</h3>
+ <p class="muted small">Toggle off any tag you don't want shown beside your name.</p>
+ <form action="/set-custom-tags" method="post" class="tag-settings">
+ {% for tag in custom_tags %}
+ <label class="tag-option">
+ <input type="checkbox" name="custom_tags" value="{{ tag.name }}" {% if tag.name.casefold() not in disabled_custom_tags %}checked{% endif %}>
+ <span class="tag-preview" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+ </label>
+ {% endfor %}
+ <button class="secondary" type="submit">Save personal tags</button>
+ </form>
+ </div>
+ {% endif %}
+ {% if tags_message and not (owner_unlocked or mod_unlocked) %}<p class="success-message">{{ tags_message }}</p>{% endif %}
+ </section>
+
+ <section class="rooms-panel">
+ <div class="panel-heading"><div><h2> Open rooms</h2><p class="muted small">The room list updates AUTOMATICALLY. so awesome amirite.</p></div><button id="refresh" class="secondary" type="button">Refresh</button></div>
+ <div id="room-list" class="room-list"><p class="muted">Loading rooms…</p></div>
+ </section>
+ <footer class="footer-note">digitechassignmentchat · Keep it respectful PUHLEASE</footer>
+ </main>
+ <script>
+ const list = document.getElementById("room-list");
+ async function loadRooms() {
+ try {
+ const response = await fetch("/api/rooms"); if (!response.ok) throw new Error();
+ const rooms = await response.json(); list.replaceChildren();
+ if (!rooms.length) { const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "maybe a ghost passed thru here? make a room 👀"; list.appendChild(empty); return; }
+ for (const room of rooms) {
+ const row = document.createElement("div"); row.className = "room-row";
+ const details = document.createElement("div"); details.className = "room-details";
+ const title = document.createElement("strong"); title.textContent = "Room " + room.code;
+ const count = document.createElement("span"); count.className = "muted small"; count.textContent = room.players + " / " + room.limit + "peoples";
+ details.append(title, count);
+ const form = document.createElement("form"); form.method = "post"; form.action = "/join/" + encodeURIComponent(room.code);
+ const button = document.createElement("button"); button.type = "submit"; button.className = "secondary"; button.textContent = room.players >= room.limit ? "Full" : "Join"; button.disabled = room.players >= room.limit;
+ form.appendChild(button); row.append(details, form); list.appendChild(row);
+ }
+ } catch (_) { list.textContent = "uhh the rooms just hate you. maybe refresh to see if they still hate you"; }
+ }
+ document.getElementById("refresh").addEventListener("click", loadRooms); loadRooms(); setInterval(loadRooms, 4000);
+ </script>
+</body>
+</html>
